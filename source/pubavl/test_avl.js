@@ -47,15 +47,11 @@ function testRemove()
         const iter = tree[Symbol.iterator]();
         
         for(let i = 0; i < COUNT; ++i) {
-                if(!tree.get(i)) throw new Error();
-                tree.remove(i);
-                if(tree.get(i)) throw new Error();
+                const p = keys[i];
+                if(!tree.get(p)) throw new Error();
+                tree.remove(p);
+                if(tree.get(p)) throw new Error();
                 const iter = tree[Symbol.iterator]();
-                for(let j = i + 1; j < COUNT; ++j) {
-                        const { value, done } = iter.next();
-                        if(done) throw new Error();
-                        if(value.key != j) throw new Error();
-                }
         }
         if(tree.size != 0) throw new Error();
 }

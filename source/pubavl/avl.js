@@ -135,7 +135,9 @@ class AVLNode {
                         node.right = AVLNode.pluck_min(node.right, result);
                         const succ = result.node;
                         succ.left = node.left;
-                        succ.right = node.right;
+                        if(succ != node.right) {
+                                succ.right = node.right;
+                        }
                         return succ.updateHeight().rebalance();
                 }
         }
