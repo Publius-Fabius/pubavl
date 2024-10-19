@@ -1,3 +1,8 @@
 ## PubAVL - AVL Search Tree Implementation in C and Javascript
-
-Don't use... Too many bugs.
+```
+Two implementations of an AVL Tree
+One in Javascript
+One in C
+Some like memory collected
+Others manually
+```
