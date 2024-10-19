@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
+#include <stdio.h>
 
 struct avl_stack *avl_stack_init(struct avl_stack *stack)
 {
@@ -108,6 +109,7 @@ struct avl_node *avl_node_rotate_left(struct avl_node *node)
 struct avl_node *avl_node_rebalance(struct avl_node *node) 
 {
         const ssize_t balance = avl_node_balance_factor(node);
+        printf("%zi <> %zi \r\n", avl_node_height(node->left), avl_node_height(node->right));
         assert(-3 < balance && balance < 3);
         if(balance > 1) {
                 if(avl_node_balance_factor(node->right) < 0) {
@@ -291,7 +293,7 @@ struct avl_node *avl_node_pluck_min(
         } 
         assert(saved_size < stack->size);
         struct avl_node *last = avl_stack_pop(stack);
-        assert(last);
+        assert(last && last->left == (*min));
         last->left = (*min)->right;
         return avl_rebalance_stack(stack, stack->size - saved_size, last);
 }

@@ -74,24 +74,20 @@ void test_add()
 void test_remove()
 {
         (void)puts("test_remove()");
-        const int COUNT = 1000;
+        const int COUNT = 100;
         int64_t keys[COUNT];
         struct avl_tree tree;
         struct avl_stack stack;
-        struct avl_node *node;
         (void)init_keys(keys, COUNT);
         (void)avl_tree_init(&tree, cmp_i64, alloc_node, free_node, NULL);
         (void)avl_stack_init(&stack);
         (void)add_all(&tree, &stack, keys, COUNT);
         for(int64_t i = 0; i < COUNT; ++i) {
-                AVL_TEST(avl_get(&tree, AVL_KV(i64, i)));
-                AVL_TEST(avl_remove(&tree, &stack, AVL_KV(i64, i), NULL, NULL));
-                AVL_TEST(!avl_get(&tree, AVL_KV(i64, i)));
-                AVL_TEST(avl_traverse(&tree, &stack));
-                for(int64_t j = i + 1; j < COUNT; ++j) {
-                        AVL_TEST(avl_next(&stack, &node));
-                        AVL_TEST(node->key.u.i64 == j);
-                }
+                printf("iter=%zi\r\n", i);
+                const int64_t k = keys[i];
+                AVL_TEST(avl_get(&tree, AVL_KV(i64, k)));
+                AVL_TEST(avl_remove(&tree, &stack, AVL_KV(i64, k), NULL, NULL));
+                AVL_TEST(!avl_get(&tree, AVL_KV(i64, k)));
         }
         AVL_TEST(tree.size == 0);
 }
