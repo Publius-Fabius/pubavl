@@ -74,7 +74,7 @@ void test_add()
 void test_remove()
 {
         (void)puts("test_remove()");
-        const int COUNT = 100;
+        const int COUNT = 1000;
         int64_t keys[COUNT];
         struct avl_tree tree;
         struct avl_stack stack;
@@ -83,7 +83,6 @@ void test_remove()
         (void)avl_stack_init(&stack);
         (void)add_all(&tree, &stack, keys, COUNT);
         for(int64_t i = 0; i < COUNT; ++i) {
-                printf("iter=%zi\r\n", i);
                 const int64_t k = keys[i];
                 AVL_TEST(avl_get(&tree, AVL_KV(i64, k)));
                 AVL_TEST(avl_remove(&tree, &stack, AVL_KV(i64, k), NULL, NULL));
