@@ -10,6 +10,9 @@ test_avl: source/pubavl/test_avl.c avl.o
 grind_test_avl: test_avl
 	valgrind -q --error-exitcode=1 --leak-check=full ./$^
 
+lib/libpubavl.a : avl.o
+	ar -crs $@ $^
+
 clean:
 	rm avl.o || true
 	rm test_avl || true
