@@ -45,6 +45,15 @@ struct avl_node *avl_stack_pop(struct avl_stack *stack)
         return node;
 }
 
+struct avl_node *avl_stack_peek(struct avl_stack *stack)
+{
+        assert(stack && stack->array && stack->size <= AVL_STACK_MAX);
+        if(stack->size == 0) {
+                return NULL;
+        } 
+        return stack->array[stack->size - 1];
+}
+
 struct avl_node *avl_node_init(
         struct avl_node *node,
         struct avl_kv key,
@@ -131,7 +140,7 @@ struct avl_node *avl_node_rebalance(struct avl_node *node)
         }
 }
 
-struct avl_node *avl_rebalance_stack(
+struct avl_node *avl_stack_rebalance(
         struct avl_stack *stack,
         const size_t nsteps,
         struct avl_node *top)
@@ -155,43 +164,6 @@ struct avl_node *avl_rebalance_stack(
         return new_top; 
 }
 
-/** 
- * Returns a memory address to where a node with the given key would be 
- * inserted into the tree.  A value of NULL is returned if the key already
- * exists or an error occurred.  The stack will be set up for rebalancing
- * with the return value being located within the top node's memory region.
- */
-struct avl_node **avl_node_add_search(
-        struct avl_node *search,
-        struct avl_kv key,
-        avl_cmp_t cmp,
-        struct avl_stack *stack)
-{
-        assert(cmp && search);
-        (void)avl_stack_reset(stack);
-        for(size_t I = 0; I < AVL_STACK_MAX; ++I) {
-                if(cmp(key, search->key)) {
-                        if(!avl_stack_push(stack, search)) {
-                                return NULL;
-                        } else if(!search->left) {
-                                return &search->left;
-                        }
-                        search = search->left;
-                } else if(cmp(search->key, key)) {
-                        if(!avl_stack_push(stack, search)) {
-                                return NULL;
-                        } else if(!search->right) {
-                                return &search->right;
-                        }
-                        search = search->right;
-                } else {
-                        return NULL;
-                }
-        }
-        assert(0);
-        return NULL;
-}
-
 struct avl_node *avl_node_add(
         struct avl_node *const root,
         struct avl_stack *stack,
@@ -202,33 +174,54 @@ struct avl_node *avl_node_add(
         void *state,
         struct avl_node **result)
 {
-        struct avl_node *new_node, *top, **address;
-        assert(stack && alloc && result);
+        struct avl_node *new_node, *top, *srch, **addr = NULL;
+        assert(alloc && result);
         if(!root) {
                 new_node = alloc(state);
                 if(!new_node) {
                         goto FAILURE;
-                } 
-                *result = avl_node_init(new_node, key, value);
-                return new_node;
+                } else {
+                        *result = avl_node_init(new_node, key, value);
+                        return new_node;
+                }
         }
-        address = avl_node_add_search(root, key, cmp, stack);
-        if(!address) {
-                goto FAILURE;
-        } 
-        new_node = alloc(state);
-        if(!new_node) {
-                goto FAILURE;
-        } 
-        *address = *result = avl_node_init(new_node, key, value);
-        assert(stack->size > 0);
-        top = avl_stack_pop(stack);
-        assert(top && (top->left == new_node || top->right == new_node));
-        return avl_rebalance_stack(stack, stack->size, top);
-
+        (void)avl_stack_reset(stack);
+        srch = root;
+        for(size_t I = 0; I < AVL_STACK_MAX; ++I) {
+                if(!srch) {
+                        goto FINISH;
+                } else if(cmp(key, srch->key)) {
+                        if(!avl_stack_push(stack, srch)) {
+                                goto FAILURE;
+                        } else {
+                                addr = &srch->left;
+                                srch = srch->left;
+                        }
+                } else if(cmp(srch->key, key)) {
+                        if(!avl_stack_push(stack, srch)) {
+                                goto FAILURE;
+                        } else {
+                                addr = &srch->right;
+                                srch = srch->right;
+                        }
+                } else {
+                        goto FAILURE;
+                }
+        }
+        assert(0);
         FAILURE:
         *result = NULL;
         return root;
+        FINISH:
+        assert(addr);
+        new_node = alloc(state);
+        if(!new_node) {
+                goto FAILURE;
+        }
+        *addr = *result = avl_node_init(new_node, key, value);
+        top = avl_stack_pop(stack);
+        assert(top && (top->left == new_node || top->right == new_node));
+        return avl_stack_rebalance(stack, stack->size, top);
 }
 
 struct avl_node *avl_node_get(
@@ -252,116 +245,74 @@ struct avl_node *avl_node_get(
         return NULL;
 }
 
-/** Traverse to the minimum node, NULL if stack runs out of memory. */
-struct avl_node *avl_node_pluck_min_search(
-        struct avl_node *node, 
-        struct avl_stack *stack)
-{
-        assert(node);
-        for(size_t I = 0; I < AVL_STACK_MAX; ++I) {
-                if(node->left) {
-                        if(!avl_stack_push(stack, node)) {
-                                return NULL;
-                        } 
-                        node = node->left;
-                } else {
-                        return node;
-                }
-        }
-        assert(0);
-        return NULL;
-}
-
-/** 
- * Pluck minimum value, result is NULL on failure, otherwise the min node. 
- * Return value is root or rebalanced root.
- */
-struct avl_node *avl_node_pluck_min(
-        struct avl_node *const root, 
+struct avl_node *avl_node_remove_ent_nary(
+        struct avl_node *root,
         struct avl_stack *stack,
-        struct avl_node **min)
+        struct avl_node **addr,
+        struct avl_node **entry)
 {
-        assert(min);
+        struct avl_node *top = NULL;
+        struct avl_node *succ = (*entry)->right;
         const size_t saved_size = stack->size;
-        *min = avl_node_pluck_min_search(root, stack);
-        if(!(*min)) {
-                return root;
-        } else if(stack->size == saved_size) {
-                assert((*min) == root);
-                return root;
-        } 
-        assert(saved_size < stack->size);
-        struct avl_node *last = avl_stack_pop(stack);
-        assert(last && last->left == (*min) && (*min)->left == NULL);
-        last->left = (*min)->right;
-        return avl_rebalance_stack(stack, stack->size - saved_size, last);
-}
-
-/** 
- * Pluck the given node, or -1 if there's an error.  Upon success, result 
- * contains the updated and rebalanced sub-tree without node.
- */
-int avl_node_pluck(
-        struct avl_node *const node, 
-        struct avl_stack *stack,
-        struct avl_node **result)
-{
-        assert(result);
-        if(!node) {
-                *result = node;
-                return 0;
-        } else if(!node->left) {
-                *result = node->right;
-                return 0;
-        } else if(!node->right) {
-                *result = node->left;
-                return 0;
-        } 
-        struct avl_node *succ = NULL;
-        node->right = avl_node_pluck_min(node->right, stack, &succ);
-        if(!succ) {
-                *result = node;
-                return -1;
-        } 
-        succ->left = node->left;
-        if(succ != node->right) {
-                succ->right = node->right;
-        }
-        *result = avl_node_rebalance(avl_node_update_height(succ));
-        return 0;
-}
-
-struct avl_node **avl_node_remove_search(
-        struct avl_node **root,
-        struct avl_kv key,
-        avl_cmp_t cmp,
-        struct avl_stack *stack)
-{
-        assert(cmp);
-        (void)avl_stack_reset(stack);
-        struct avl_node **address = root;
-        struct avl_node *search = *root;
         for(size_t I = 0; I < AVL_STACK_MAX; ++I) {
-                if(!search) {
-                        return NULL;
-                } else if(cmp(key, search->key)) {
-                        if(!avl_stack_push(stack, search)) {
-                                return NULL;
-                        }
-                        address = &search->left;
-                        search = search->left;
-                } else if(cmp(search->key, key)) {
-                        if(!avl_stack_push(stack, search)) {
-                                return NULL;
-                        } 
-                        address = &search->right;
-                        search = search->right;
+                if(!succ->left) {
+                        goto FINISH;
+                } else if(!avl_stack_push(stack, succ)) {
+                        goto FAILURE;
                 } else {
-                        return address;
+                        succ = succ->left;
                 }
         }
         assert(0);
-        return NULL;
+        FAILURE:
+        *entry = NULL;
+        return root;
+        FINISH:
+        top = avl_stack_pop(stack);
+        assert(stack->size >= saved_size && top && top->left == succ);
+        top->left = succ->right;
+        succ->right = avl_stack_rebalance(
+                stack, stack->size - saved_size, top);
+        succ->left = (*entry)->left;
+        succ = avl_node_rebalance(avl_node_update_height(succ));
+        if(!addr) {
+                assert(!stack->size);
+                return succ;
+        } 
+        *addr = succ;
+        top = avl_stack_pop(stack);
+        assert(top && (top->left == succ || top->right == succ));
+        return avl_stack_rebalance(stack, stack->size, top);
+}
+
+struct avl_node *avl_node_remove_ent(
+        struct avl_node *root,
+        struct avl_stack *stack,
+        struct avl_node **addr,
+        struct avl_node **entry)
+{
+        struct avl_node *patch, *top = NULL;
+        struct avl_node *ent = *entry;
+        assert(ent);
+        if(!ent->left) {
+                patch = ent->right;
+        } else if(!ent->right) {
+                patch = ent->left;
+        } else if(!ent->right->left) {
+                ent->right->left = ent->left;
+                patch = avl_node_rebalance(
+                        avl_node_update_height(ent->right));
+        } else {
+                return avl_node_remove_ent_nary(root, stack, addr, entry);
+        } 
+        if(!addr) {
+                assert(!stack->size);
+                return patch;
+        } 
+        *addr = patch;
+        top = avl_stack_pop(stack);
+        assert(top && (top->left == patch || top->right == patch));
+        return avl_stack_rebalance(stack, stack->size, top);
 }
 
 struct avl_node *avl_node_remove(
@@ -369,27 +320,40 @@ struct avl_node *avl_node_remove(
         struct avl_stack *stack,
         struct avl_kv key, 
         avl_cmp_t cmp,
-        struct avl_node **node)
+        struct avl_node **entry)
 {
-        struct avl_node **address, *sub_tree, *top = NULL;
-        address = avl_node_remove_search(&root, key, cmp, stack);
-        if(!address) {
+        assert(cmp && entry);
+        if(!root) {
                 goto FAILURE;
-        } else if(avl_node_pluck(*address, stack, &sub_tree) < 0) {
-                goto FAILURE;
+        } 
+        (void)avl_stack_reset(stack);
+        struct avl_node *srch = root;
+        struct avl_node **addr = NULL;
+        for(size_t I = 0; I < AVL_STACK_MAX; ++I) {
+                if(!srch) {
+                        goto FAILURE;
+                } else if(cmp(key, srch->key)) {
+                        if(!avl_stack_push(stack, srch)) {
+                                goto FAILURE;
+                        } else {
+                                addr = &srch->left;
+                                srch = srch->left;
+                        }
+                } else if(cmp(srch->key, key)) {
+                        if(!avl_stack_push(stack, srch)) {
+                                goto FAILURE;
+                        } else {
+                                addr = &srch->right;
+                                srch = srch->right;
+                        }
+                } else {
+                        *entry = srch;
+                        return avl_node_remove_ent(root, stack, addr, entry);
+                }
         }
-        *node = *address;
-        if(stack->size == 0) {
-                assert(*address == root);
-                return sub_tree;
-        }
-        *address = sub_tree;
-        top = avl_stack_pop(stack);
-        assert(top && (top->left == sub_tree || top->right == sub_tree));
-        return avl_rebalance_stack(stack, stack->size, top);
-
+        assert(0);
         FAILURE:
-        *node = NULL;
+        *entry = NULL;
         return root;
 }
 
@@ -442,7 +406,6 @@ struct avl_stack *avl_node_traverse(
         struct avl_node *node, 
         struct avl_stack *stack)
 {
-        assert(stack);
         (void)avl_stack_reset(stack);
         for(size_t I = 0; I < AVL_STACK_MAX; ++I) {
                 if(!node) {
@@ -461,26 +424,25 @@ struct avl_node *avl_node_remove_first(
         struct avl_stack *stack,
         struct avl_node **min)
 {
-        assert(stack);
-        struct avl_node *node, *sub_tree, *top;
-        if(!avl_node_traverse(root, stack) ) {
+        assert(min);
+        if(!root) {
                 goto FAILURE;
-        } else if(stack->size == 0) {
-                goto FAILURE;
-        } 
-        node = avl_stack_pop(stack);
-        assert(node);
-        *min = node;
-        if(avl_node_pluck(node, stack, &sub_tree) < 0) {
-                goto FAILURE;
-        } else if(stack->size == 0) {
-                return sub_tree;
         }
-        top = avl_stack_pop(stack);
-        assert(top && (top->left == node));
-        top->left = sub_tree;
-        return avl_rebalance_stack(stack, stack->size, top);
-
+        (void)avl_stack_reset(stack);
+        struct avl_node *srch = root;
+        struct avl_node **addr = NULL;
+        for(size_t I = 0; I < AVL_STACK_MAX; ++I) {
+                if(!srch->left) {
+                        *min = srch;
+                        return avl_node_remove_ent(root, stack, addr, min);
+                } else if(!avl_stack_push(stack, srch)) {
+                        goto FAILURE;
+                } else {
+                        addr = &srch->left;
+                        srch = srch->left;
+                } 
+        }
+        assert(0);
         FAILURE:
         *min = NULL;
         return root;
@@ -491,26 +453,25 @@ struct avl_node *avl_node_remove_last(
         struct avl_stack *stack,
         struct avl_node **max)
 {
-        assert(stack);
-        struct avl_node *node, *sub_tree, *top;
-        if(!avl_node_reversed(root, stack)) {
+        assert(max);
+        if(!root) {
                 goto FAILURE;
-        } else if(stack->size == 0) {
-                goto FAILURE;
-        } 
-        node = avl_stack_pop(stack);
-        assert(node);
-        *max = node;
-        if(avl_node_pluck(node, stack, &sub_tree) < 0) {
-                goto FAILURE;
-        } else if(stack->size == 0) {
-                return sub_tree;
         }
-        top = avl_stack_pop(stack);
-        assert(top && (top->right == node));
-        top->right = sub_tree;
-        return avl_rebalance_stack(stack, stack->size, top);
-        
+        (void)avl_stack_reset(stack);
+        struct avl_node *srch = root;
+        struct avl_node **addr = NULL;
+        for(size_t I = 0; I < AVL_STACK_MAX; ++I) {
+                if(!srch->right) {
+                        *max = srch;
+                        return avl_node_remove_ent(root, stack, addr, max);
+                } else if(!avl_stack_push(stack, srch)) {
+                        goto FAILURE;
+                } else {
+                        addr = &srch->right;
+                        srch = srch->right;
+                } 
+        }
+        assert(0);
         FAILURE:
         *max = NULL;
         return root;

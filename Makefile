@@ -16,3 +16,4 @@ lib/libpubavl.a : avl.o
 clean:
 	rm avl.o || true
 	rm test_avl || true
+	rm lib/libpubavl.a || true
